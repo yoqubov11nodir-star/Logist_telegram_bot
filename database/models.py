@@ -13,6 +13,7 @@ class UserRole(enum.Enum):
     DISPATCHER = "DISPATCHER"
     DRIVER = "DRIVER"
     CASHIER = "CASHIER"
+    CLIENT = "CLIENT"     # <--- SHU BO'LISHI SHART
     PENDING = "PENDING"
 
 class OrderStatus(enum.Enum):
