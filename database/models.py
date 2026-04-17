@@ -23,6 +23,7 @@ class OrderStatus(enum.Enum):
     ON_WAY = "ON_WAY"
     DIDOX_PENDING = "DIDOX_PENDING"
     UNLOADED = "UNLOADED"
+    PAID = "PAID"
     COMPLETED = "COMPLETED"  # BU YERGA QO'SHILDI
     CANCELLED = "CANCELLED"
 

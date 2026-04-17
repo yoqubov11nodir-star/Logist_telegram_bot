@@ -81,6 +81,7 @@ async def show_total_profit(message: Message, user: User):
 
     async with async_session() as session:
         try:
+            # Faqat puli to'langan yoki yakunlangan buyurtmalar hisoblanadi
             result = await session.execute(
                 select(
                     func.count(Order.id).label("count"),
@@ -88,15 +89,17 @@ async def show_total_profit(message: Message, user: User):
                     func.sum(Order.cost_price).label("expense")
                 ).where(Order.status.in_([OrderStatus.COMPLETED, OrderStatus.PAID]))
             )
-            stats = result.one()
             
-            # XATONI OLDINI OLISH: Agar None kelsa 0 deb olamiz
-            count = stats.count or 0
-            income = stats.income or 0
-            expense = stats.expense or 0
+            # .one() emas, .first() ishlatish xavfsizroq
+            stats = result.first()
+            
+            # Xatolikni oldini olish: Agar baza bo'sh bo'lsa yoki None kelsa
+            count = stats.count if stats and stats.count else 0
+            income = stats.income if stats and stats.income else 0
+            expense = stats.expense if stats and stats.expense else 0
             profit = income - expense
 
-            await message.answer(
+            text = (
                 f"📊 **KOMPANIYA MOLIYAVIY HISOBOTI**\n\n"
                 f"✅ Yopilgan buyurtmalar: {count} ta\n"
                 f"💵 Umumiy tushum: {income:,.0f} so'm\n"
@@ -104,6 +107,9 @@ async def show_total_profit(message: Message, user: User):
                 f"---------------------------\n"
                 f"💰 **SOF FOYDA: {profit:,.0f} so'm**"
             )
+            
+            await message.answer(text)
+
         except Exception as e:
             logging.error(f"Profit stats error: {e}")
             await message.answer("❌ Statistikani hisoblashda xatolik yuz berdi.")
@@ -134,7 +140,7 @@ async def process_set_role(callback: CallbackQuery):
                 except: pass
             else:
                 await callback.answer("Foydalanuvchi topilmadi!", show_alert=True)
-                
+
     except Exception as e:
         logging.error(f"Set role error: {e}")
         await callback.answer("Xatolik!")
