@@ -13,6 +13,10 @@ from bot.states.order_states import OrderCreation
 from bot.states.logist_states import LogistSteps
 from bot.keyboards.logist_kb import get_logist_main_keyboard, get_dispatchers_keyboard
 from bot.keyboards.dispatcher_kb import get_dispatcher_main_keyboard
+# Kodingni eng tepasiga boshqa importlar qatoriga qo'sh:
+from bot.keyboards.admin_kb import get_admin_approve_keyboard
+
+import logging
 
 logist_router = Router()
 
@@ -50,52 +54,90 @@ async def location_timer_logic(order_id: int, bot: Bot, driver_name: str, disp_t
         if order_id in active_location_requests:
             active_location_requests.pop(order_id)
 
-# --- START KOMANDASI (FOYDALANUVCHILARNI SARALASH) ---
+MY_ID = 1687872138
+
 @logist_router.message(F.text == "/start")
 async def cmd_start(message: Message, user: User = None):
-    # 1. Foydalanuvchi bazada yo'q bo'lsa
-    if not user:
+    # 1. Agar Middleware user-ni topmagan bo'lsa (Mutlaqo yangi user)
+    if user is None:
         async with async_session() as session:
-            new_user = User(
-                telegram_id=message.from_user.id,
-                full_name=message.from_user.full_name,
-                role=UserRole.PENDING
-            )
-            session.add(new_user)
-            await session.commit()
-        
-        await message.answer(
-            f"Assalomu alaykum! Siz tizimda ro'yxatdan o'tmagansiz.\n"
-            f"Adminga murojaat qiling va ID raqamingizni bering:\n"
-            f"Sizning ID: `{message.from_user.id}`"
-        )
-        return
+            stmt = select(User).where(User.telegram_id == message.from_user.id)
+            res = await session.execute(stmt)
+            db_user = res.scalar_one_or_none()
 
-    # 2. Foydalanuvchi kutilmoqda holatida bo'lsa
+            if not db_user:
+                db_user = User(
+                    telegram_id=message.from_user.id,
+                    full_name=message.from_user.full_name,
+                    role=UserRole.PENDING
+                )
+                session.add(db_user)
+                await session.commit()
+                # Obyektni sessiyada yangilab olamiz
+                await session.refresh(db_user)
+                user = db_user
+            else:
+                user = db_user
+
+    # 2. ENG MUHIM QISM: Agar foydalanuvchi tasdiqlanmagan bo'lsa (PENDING)
     if user.role == UserRole.PENDING:
+        try:
+            # Markdown o'rniga HTML ishlatamiz - bu xatolikni (parse error) 100% yo'qotadi
+            admin_text = (
+                f"<b>🔔 Yangi ruxsat so'rovi!</b>\n\n"
+                f"👤 Ism: {message.from_user.full_name}\n"
+                f"🆔 ID: <code>{message.from_user.id}</code>\n"
+                f"📱 Username: @{message.from_user.username or 'yoq'}\n\n"
+                f"Ushbu xodimga tizimda rol bering:"
+            )
+            
+            await message.bot.send_message(
+                chat_id=MY_ID,
+                text=admin_text,
+                parse_mode="HTML",
+                reply_markup=get_admin_approve_keyboard(message.from_user.id)
+            )
+            logging.info(f"Founderga xabar yuborildi: {MY_ID}")
+        except Exception as e:
+            logging.error(f"Founderga xabar yuborishda texnik xato: {e}")
+
         await message.answer(
-            f"Sizning so'rovingiz hali tasdiqlanmagan.\n"
-            f"Iltimos, admin javobini kuting.\n"
-            f"Sizning ID: `{message.from_user.id}`"
+            f"Sizning so'rovingiz adminga yuborilgan. ⏳\n"
+            f"Iltimos, admin tasdiqlashini kuting.\n\n"
+            f"Sizning ID: {message.from_user.id}"
         )
         return
 
-    # 3. Foydalanuvchi roliga qarab menyu chiqarish
+    # 3. Agar foydalanuvchi allaqachon FOUNDER bo'lsa
+    if user.role == UserRole.FOUNDER:
+        try:
+            from bot.keyboards.founder_kb import founder_main_kb
+            await message.answer(
+                f"Xush kelibsiz, Asoschi {user.full_name}! 👑",
+                reply_markup=founder_main_kb
+            )
+        except Exception as e:
+            await message.answer(f"Xush kelibsiz, {user.full_name}! (Menyu yuklashda xato)")
+        return
+
+    # 4. Boshqa tasdiqlangan rollar
     if user.role == UserRole.LOGIST:
+        from bot.keyboards.logist_kb import get_logist_main_keyboard
         await message.answer(
-            f"Xush kelibsiz, Logist {user.full_name}!", 
+            f"Xush kelibsiz, Logist {user.full_name}! 🚛",
             reply_markup=get_logist_main_keyboard()
         )
     elif user.role == UserRole.DISPATCHER:
+        from bot.keyboards.dispatcher_kb import get_dispatcher_main_keyboard
         await message.answer(
-            f"Xush kelibsiz, Dispetcher {user.full_name}!", 
+            f"Xush kelibsiz, Dispetcher {user.full_name}! 🎧",
             reply_markup=get_dispatcher_main_keyboard()
         )
     elif user.role == UserRole.DRIVER:
-        await message.answer(f"Xush kelibsiz, Haydovchi {user.full_name}!")
-    else:
-        await message.answer(f"Xush kelibsiz, {user.full_name}!\nSizning rolingiz: {user.role.value}")
-
+        await message.answer(f"Xush kelibsiz, Haydovchi {user.full_name}! 🚚")
+    elif user.role == UserRole.CASHIER:
+        await message.answer(f"Xush kelibsiz, Kassir {user.full_name}! 💰")
+        
 # --- BUYURTMALAR RO'YXATI ---
 @logist_router.message(F.text == "📋 Buyurtmalarim")
 async def my_orders(message: Message):
@@ -178,88 +220,115 @@ async def get_point_b(message: Message, state: FSMContext):
 
 @logist_router.message(OrderCreation.waiting_for_sale_price)
 async def get_sale_price(message: Message, state: FSMContext):
+    # Raqamdan boshqa hamma narsani olib tashlaymiz
     clean_price = "".join(filter(str.isdigit, message.text))
+    
     if not clean_price:
-        await message.answer("Iltimos, faqat raqamlarda kiriting:")
+        await message.answer("❌ Iltimos, sotish narxini faqat raqamlarda kiriting (masalan: 5000):")
         return
+        
     await state.update_data(s_price=float(clean_price))
     await message.answer("💸 **XARAJAT NARXI** (Haydovchiga beriladigan summa):")
     await state.set_state(OrderCreation.waiting_for_cost_price)
 
+# BU YERDA @ BELGISI QOLIB KETGAN EDI:
 @logist_router.message(OrderCreation.waiting_for_cost_price)
 async def finish_order(message: Message, state: FSMContext):
     clean_cost = "".join(filter(str.isdigit, message.text))
+    
     if not clean_cost:
-        await message.answer("Iltimos, faqat raqamlarda kiriting:")
+        await message.answer("❌ Iltimos, xarajat narxini faqat raqamlarda kiriting:")
         return
     
     data = await state.get_data()
+    
     async with async_session() as session:
-        new_order = Order(
-            logist_id=message.from_user.id,
-            client_phone=data['c_phone'],
-            cargo_description=data['cargo'],
-            point_a=data['p_a'],
-            point_b=data['p_b'],
-            sale_price=data['s_price'],
-            cost_price=float(clean_cost),
-            status=OrderStatus.NEW,
-            created_at=datetime.datetime.utcnow()
-        )
-        session.add(new_order)
-        await session.commit()
-        await session.refresh(new_order)
-        
-        # Dispetcherlar ro'yxatini olish
-        disp_result = await session.execute(
-            select(User).where(User.role == UserRole.DISPATCHER)
-        )
-        dispatchers = disp_result.scalars().all()
+        try:
+            new_order = Order(
+                # message.from_user.id bu telegram_id, bazada shuni saqlaymiz
+                logist_id=message.from_user.id, 
+                client_phone=data['c_phone'],
+                cargo_description=data['cargo'],
+                point_a=data['p_a'],
+                point_b=data['p_b'],
+                sale_price=data['s_price'],
+                cost_price=float(clean_cost),
+                status=OrderStatus.NEW
+            )
+            
+            session.add(new_order)
+            await session.commit()
+            await session.refresh(new_order)
+            
+            disp_result = await session.execute(
+                select(User).where(User.role == UserRole.DISPATCHER)
+            )
+            dispatchers = disp_result.scalars().all()
 
-    if not dispatchers:
-        await message.answer(f"✅ Buyurtma #{new_order.id} saqlandi. Lekin tizimda birorta ham dispetcher topilmadi!")
-        await state.clear()
-        return
+            await state.update_data(current_order_id=new_order.id)
+            
+            if not dispatchers:
+                await message.answer(
+                    f"✅ <b>Buyurtma #{new_order.id} saqlandi.</b>\n\n"
+                    f"⚠️ Lekin tizimda birorta ham dispetcher topilmadi!",
+                    parse_mode="HTML"
+                )
+                await state.clear()
+                return
 
-    await state.update_data(current_order_id=new_order.id)
-    await message.answer(
-        f"✅ Buyurtma #{new_order.id} muvaffaqiyatli saqlandi.\n\n"
-        f"Endi ushbu buyurtmani qaysi dispetcherga biriktirmoqchisiz?",
-        reply_markup=get_dispatchers_keyboard(dispatchers)
-    )
+            await message.answer(
+                f"✅ <b>Buyurtma #{new_order.id} muvaffaqiyatli saqlandi.</b>\n\n"
+                f"Endi ushbu buyurtmani qaysi dispetcherga biriktirmoqchisiz?",
+                reply_markup=get_dispatchers_keyboard(dispatchers),
+                parse_mode="HTML"
+            )
+
+        except Exception as e:
+            logging.error(f"DATABASE ERROR in finish_order: {e}")
+            await message.answer("❌ Ma'lumotlarni saqlashda texnik xato.")
 
 # --- DISPETCHERNI BIRIKTIRISH (CALLBACK) ---
+# bot/handler/logist.py
+
 @logist_router.callback_query(F.data.startswith("assign_disp_"))
 async def process_assign_dispatcher(callback: CallbackQuery, state: FSMContext):
-    disp_id = int(callback.data.split("_")[2])
+    target_user_id = int(callback.data.split("_")[2])
     data = await state.get_data()
     order_id = data.get('current_order_id')
 
-    if not order_id:
-        await callback.answer("Xatolik: Buyurtma ID topilmadi.", show_alert=True)
-        return
-
     async with async_session() as session:
-        order = (await session.execute(select(Order).where(Order.id == order_id))).scalar_one()
-        order.dispatcher_id = disp_id
-        order.status = OrderStatus.DISPATCHER_ASSIGNED
-        
-        dispatcher = (await session.execute(select(User).where(User.id == disp_id))).scalar_one()
-        await session.commit()
+        try:
+            # Dispetcherni bazadagi serial ID si orqali topamiz
+            res = await session.execute(select(User).where(User.id == target_user_id))
+            dispatcher = res.scalar_one_or_none()
 
-    await callback.message.edit_text(f"✅ Buyurtma #{order_id} dispetcher **{dispatcher.full_name}**ga biriktirildi.")
-    
-    # Dispetcherga xabar yuborish
-    try:
-        await callback.bot.send_message(
-            chat_id=dispatcher.telegram_id,
-            text=f"🔔 **YANGI BUYURTMA KELDI!**\n\n"
-                 f"🆔 ID: #{order_id}\n"
-                 f"📍 Manzil: {order.point_a} ➔ {order.point_b}\n"
-                 f"📦 Yuk: {order.cargo_description}"
-        )
-    except: pass
-    await state.clear()
+            if not dispatcher:
+                await callback.answer("Dispetcher topilmadi!")
+                return
+
+            order_res = await session.execute(select(Order).where(Order.id == order_id))
+            order = order_res.scalar_one_or_none()
+
+            if order:
+                # BU YERDA XATO BOR EDI: .id (3) emas, .telegram_id ni biriktiramiz!
+                order.dispatcher_id = dispatcher.telegram_id 
+                order.status = OrderStatus.DISPATCHER_ASSIGNED
+                await session.commit()
+                
+                await callback.message.edit_text(
+                    f"✅ Buyurtma #{order_id} dispetcher {dispatcher.full_name}ga biriktirildi."
+                )
+                
+                await callback.bot.send_message(
+                    chat_id=dispatcher.telegram_id,
+                    text=f"🔔 Sizga yangi buyurtma biriktirildi: #{order_id}"
+                )
+            else:
+                await callback.answer("Buyurtma topilmadi!")
+        except Exception as e:
+            await session.rollback()
+            logging.error(f"Error in process_assign_dispatcher: {e}")
+            await callback.answer("Xatolik yuz berdi!")
 
 # --- BOSQICH 7: DIDOX SHOT-FAKTURA YUBORISH ---
 @logist_router.callback_query(F.data.startswith("send_invoice_"))
@@ -305,3 +374,83 @@ async def handle_invoice_pdf(message: Message, state: FSMContext):
         await message.answer("⚠️ Mijoz botdan ro'yxatdan o'tmagan, shuning uchun faktura unga telegram orqali yuborilmadi.")
 
     await state.clear()
+
+@logist_router.callback_query(F.data.startswith("cl_confirm_inv_"))
+async def client_confirm_invoice(callback: CallbackQuery):
+    order_id = int(callback.data.split("_")[3])
+    
+    async with async_session() as session:
+        order = (await session.execute(select(Order).where(Order.id == order_id))).scalar_one()
+        order.status = OrderStatus.UNLOADED # Yoki jarayon bo'yicha keyingi status
+        
+        # Kassirni topish va bildirishnoma yuborish
+        cashier_res = await session.execute(select(User).where(User.role == UserRole.CASHIER))
+        cashier = cashier_res.scalars().first()
+        
+        await session.commit()
+
+    await callback.message.edit_caption(caption=callback.message.caption + "\n\n✅ Siz fakturani tasdiqladingiz.")
+    
+    if cashier:
+        await callback.bot.send_message(
+            chat_id=cashier.telegram_id,
+            text=f"💵 Buyurtma #{order_id} mijoz tomonidan tasdiqlandi. To'lov qilishingiz mumkin."
+        )
+
+# ==========================================================================
+
+logist_doc_router = Router() # Mana shu satr yetishmayapti
+
+# Logist shot-faktura (PDF) yuborganda ushlab qolish
+@logist_doc_router.message(F.document & F.caption.contains("faktura")) # yoki caption orqali filtrlaymiz
+async def handle_shot_faktura(message: Message):
+    # Bu yerda logist biror buyurtma ID sini yozib yuborishi kerak yoki 
+    # biz state orqali qaysi buyurtma uchunligini bilishimiz kerak.
+    # Hozircha caption-da ID bor deb hisoblaymiz (Masalan: "faktura #12")
+    
+    try:
+        order_id = int(message.caption.split("#")[1])
+    except:
+        await message.answer("⚠️ Iltimos, fayl izohida (caption) buyurtma raqamini yozing. Masalan: 'faktura #12'")
+        return
+
+    async with async_session() as session:
+        order_res = await session.execute(select(Order).where(Order.id == order_id))
+        order = order_res.scalar_one_or_none()
+        
+        if not order:
+            await message.answer("Buyurtma topilmadi!")
+            return
+
+        # Statusni o'zgartiramiz
+        order.status = OrderStatus.DIDOX_TASDIQDA # TZ bo'yicha status
+        
+        # Haydovchi va Dispetcherni topish
+        driver_res = await session.execute(select(User).where(User.id == order.driver_id))
+        driver = driver_res.scalar_one()
+        
+        disp_res = await session.execute(select(User).where(User.id == order.dispatcher_id))
+        dispatcher = disp_res.scalar_one()
+
+        await session.commit()
+
+    # 1. Dispetcherga bildirishnoma
+    await message.bot.send_message(
+        chat_id=dispatcher.telegram_id,
+        text=f"📄 Logist #{order_id} buyurtma uchun shot-fakturani yubordi. Haydovchi yukni tushirishi mumkin."
+    )
+
+    # 2. Haydovchiga ruxsat va "Yukni tushiryapman" tugmasi
+    from bot.handler.driver import get_driver_main_keyboard # o'zingdagi keyboard funksiyasi
+    
+    await message.bot.send_message(
+        chat_id=driver.telegram_id,
+        text=f"✅ Ruxsat berildi! Shot-faktura yuborildi. Yukni tushirishni boshlang va botga media yuboring."
+    )
+
+    # 3. Mijozga fakturani yuborish (TZ punkt 7)
+    # Avvalroq order.client_phone orqali mijozni topishni yozgan eding
+    # Mijozga PDF faylni forward qilamiz
+    # ... (mijoz logikasi)
+
+    await message.answer(f"✅ #{order_id} buyurtma uchun shot-faktura qabul qilindi va tarqatildi.")

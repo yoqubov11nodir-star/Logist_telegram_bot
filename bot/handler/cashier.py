@@ -14,14 +14,24 @@ cashier_router = Router()
 async def process_payment_start(callback: CallbackQuery, state: FSMContext):
     order_id = int(callback.data.split("_")[2])
     
+    async with async_session() as session:
+        order_res = await session.execute(select(Order).where(Order.id == order_id))
+        order = order_res.scalar_one()
+        
+        driver_res = await session.execute(select(User).where(User.telegram_id == order.driver_id))
+        driver = driver_res.scalar_one()
+
     await state.update_data(current_order_id=order_id)
     await state.set_state(CashierSteps.waiting_for_receipt)
     
+    # TZ: Kassir haydovchi kartasini ko'rishi shart
     await callback.message.answer(
-        f"💳 #{order_id}-buyurtma uchun to'lov bajarildimi?\n"
-        f"Iltimos, to'lov cheki (skrinshot/rasm)ni yuboring."
+        f"💳 **To'lov ma'lumotlari (Order #{order_id})**\n\n"
+        f"👨‍✈️ Haydovchi: {driver.full_name}\n"
+        f"💳 Karta: `{driver.card_number or 'Kiritilmagan'}`\n"
+        f"💰 Summa: {order.cost_price:,.0f} so'm\n\n"
+        f"Iltimos, to'lovni bajarib, chek rasmini yuboring."
     )
-
 # 2. Kassir chek rasmini yuborganda
 @cashier_router.message(CashierSteps.waiting_for_receipt, F.photo)
 async def handle_payment_receipt(message: Message, state: FSMContext):
@@ -90,3 +100,4 @@ async def handle_payment_receipt(message: Message, state: FSMContext):
             print(f"Founderga yuborishda xato: {e}")
     
     await state.clear()
+

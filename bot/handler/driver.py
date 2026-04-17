@@ -34,8 +34,13 @@ async def view_driver_orders(message: Message, user: User):
         return
 
     async with async_session() as session:
+        # COMPLETED va PAID statusidan boshqa barcha faol buyurtmalarni olamiz
         result = await session.execute(
-            select(Order).where(Order.driver_id == user.id, Order.status != OrderStatus.COMPLETED)
+            select(Order).where(
+                Order.driver_id == user.id, 
+                Order.status != OrderStatus.COMPLETED,
+                Order.status != OrderStatus.PAID
+            )
         )
         orders = result.scalars().all()
 
@@ -45,25 +50,38 @@ async def view_driver_orders(message: Message, user: User):
 
     for order in orders:
         kb = InlineKeyboardBuilder()
-        
+        status_info = ""
+
+        # TZ bo'yicha statuslar zanjiri
         if order.status == OrderStatus.DRIVER_ASSIGNED:
             kb.button(text="📍 A nuqtaga keldim", callback_data=f"st_arrived_a_{order.id}")
+            
         elif order.status == OrderStatus.ARRIVED_A:
             kb.button(text="📸 Yuk ortildi (Media)", callback_data=f"st_load_media_{order.id}")
+            
         elif order.status == OrderStatus.LOADED:
             kb.button(text="🚚 Yo'lga chiqdim", callback_data=f"st_on_way_{order.id}")
+            
         elif order.status == OrderStatus.ON_WAY:
             kb.button(text="🏁 B nuqtaga keldim", callback_data=f"st_arrived_b_{order.id}")
+            
         elif order.status == OrderStatus.ARRIVED_B:
+            # TZ: B nuqtaga kelgach, Logist faktura yuklashini kutish kerak
+            status_info = "\n\n⏳ **Kuting:** Logist shot-faktura yuklamoqda..."
+            
+        elif order.status == OrderStatus.DIDOX_TASDIQDA:
+            # TZ: Logist faktura yuklagandan keyin ruxsat beriladi
             kb.button(text="📦 Yukni tushirdim (Media)", callback_data=f"st_unload_media_{order.id}")
-        
+            status_info = "\n\n✅ **Ruxsat:** Shot-faktura tayyor, yukni tushirishingiz mumkin."
+
         text = (
             f"📦 **Buyurtma #{order.id}**\n"
             f"📍 {order.point_a} -> {order.point_b}\n"
             f"📝 Yuk: {order.cargo_description}\n"
             f"📊 Holat: {order.status.value}"
+            f"{status_info}"
         )
-        await message.answer(text, reply_markup=kb.as_markup())
+        await message.answer(text, reply_markup=kb.as_markup() if kb.as_markup().inline_keyboard else None)
 
 @driver_router.callback_query(F.data.startswith("st_arrived_a_"))
 async def status_arrived_a(callback: CallbackQuery):
@@ -158,12 +176,45 @@ async def handle_location(message: Message, state: FSMContext):
 @driver_router.callback_query(F.data.startswith("st_arrived_b_"))
 async def status_arrived_b(callback: CallbackQuery):
     order_id = int(callback.data.split("_")[3])
+    
     async with async_session() as session:
         result = await session.execute(select(Order).where(Order.id == order_id))
         order = result.scalar_one()
+        
+        # Statusni yangilaymiz
         order.status = OrderStatus.ARRIVED_B
+        
+        # Dispetcher ma'lumotlarini olamiz
+        disp_res = await session.execute(select(User).where(User.id == order.dispatcher_id))
+        dispatcher = disp_res.scalar_one()
+        
         await session.commit()
-    await callback.message.edit_text("🏁 Manzilga yetib keldingiz. Yukni tushirgach media yuboring.")
+
+    # Haydovchiga javob
+    await callback.message.edit_text(
+        "🏁 Manzilga (B nuqta) yetganingiz qayd etildi.\n"
+        "Dispetcher tasdiqlagach va Logist shot-faktura yuklagach, yukni tushirishingiz mumkin."
+    )
+
+    # TZ: Dispetcherga tasdiqlash so'rovini yuborish
+    if dispatcher and dispatcher.telegram_id:
+        kb = InlineKeyboardBuilder()
+        # Bu callback_data avvalroq dispatcher.py ga qo'shgan handlerimizga mos
+        kb.button(text="✅ Kelganini tasdiqlash", callback_data=f"st_arrived_b_confirm_{order_id}")
+        
+        try:
+            await callback.bot.send_message(
+                chat_id=dispatcher.telegram_id,
+                text=(
+                    f"🚚 **B nuqtaga yetib keldi!**\n\n"
+                    f"Buyurtma: #{order_id}\n"
+                    f"Haydovchi: {callback.from_user.full_name}\n\n"
+                    f"Iltimos, haydovchi yetib kelganini tasdiqlang."
+                ),
+                reply_markup=kb.as_markup()
+            )
+        except Exception as e:
+            print(f"Dispetcherga xabar yuborishda xato: {e}")
 
 @driver_router.callback_query(F.data.startswith("st_unload_media_"))
 async def start_unload_media(callback: CallbackQuery, state: FSMContext):
@@ -186,3 +237,11 @@ async def save_card(message: Message, state: FSMContext, user: User):
         await session.commit()
     await message.answer("✅ Karta raqamingiz saqlandi.")
     await state.clear()
+
+# 🔥 TZ Bosqich 5: Mijoz so'raganda lokatsiya yuborish handleri
+@driver_router.callback_query(F.data.startswith("act_on_way_"))
+async def driver_send_current_loc(callback: CallbackQuery, state: FSMContext):
+    order_id = int(callback.data.split("_")[3])
+    await state.update_data(current_order_id=order_id)
+    await state.set_state(DriverSteps.waiting_for_location) # Senda bu state bor
+    await callback.message.answer("📍 Mijoz lokatsiya so'radi. Iltimos, joriy lokatsiyangizni yuboring.")

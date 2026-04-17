@@ -78,3 +78,4 @@ async def finalize_payment_process(callback: CallbackQuery):
     
     await callback.message.edit_caption(caption="✅ Faktura tasdiqlandi. To'lov amalga oshirilgach, kassir tasdiqlaydi.")
     await callback.answer("Rahmat, tasdiqlandi!")
+

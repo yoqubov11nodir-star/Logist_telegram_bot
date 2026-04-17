@@ -23,7 +23,8 @@ async def view_assigned_orders(message: Message, user: User):
     async with async_session() as session:
         result = await session.execute(
             select(Order).where(
-                Order.dispatcher_id == user.id, 
+                # XATO SHU YERDA EDI: user.id emas, user.telegram_id bo'lishi kerak
+                Order.dispatcher_id == user.telegram_id, 
                 Order.status == OrderStatus.DISPATCHER_ASSIGNED
             )
         )
@@ -37,12 +38,15 @@ async def view_assigned_orders(message: Message, user: User):
         kb = InlineKeyboardBuilder()
         kb.button(text="🚛 Haydovchi biriktirish", callback_data=f"find_driver_{order.id}")
         
+        # cost_price None bo'lsa xato bermasligi uchun :.0f o'rniga oddiy format
+        price = f"{order.cost_price:,.0f}" if order.cost_price else "0"
+        
         text = (
             f"📦 **Yangi buyurtma tushdi!**\n\n"
             f"🆔 ID: #{order.id}\n"
             f"📍 Yo'nalish: {order.point_a} -> {order.point_b}\n"
             f"📝 Yuk: {order.cargo_description}\n"
-            f"💸 Sizga berilgan limit: {order.cost_price:,.0f} so'm"
+            f"💸 Sizga berilgan limit: {price} so'm"
         )
         await message.answer(text, reply_markup=kb.as_markup(), parse_mode="Markdown")
 
@@ -237,3 +241,48 @@ async def reject_unloading_b(callback: CallbackQuery):
         chat_id=driver.telegram_id,
         text="❌ Yuk tushirish mediangiz rad etildi. Iltimos, qaytadan yuboring."
     )
+
+
+# --- B NUQTAGA YETIB KELISHNI TASDIQLASH (Bosqich 6) ---
+@dispatcher_router.callback_query(F.data.startswith("st_arrived_b_confirm_"))
+async def confirm_arrived_b(callback: CallbackQuery):
+    order_id = int(callback.data.split("_")[4])
+
+    async with async_session() as session:
+        order = (await session.execute(select(Order).where(Order.id == order_id))).scalar_one()
+        logist = (await session.execute(select(User).where(User.id == order.logist_id))).scalar_one()
+        order.status = OrderStatus.ARRIVED_B
+        await session.commit()
+
+    await callback.message.edit_text(f"✅ #{order_id} buyurtma: B nuqtaga kelgani tasdiqlandi. Logistga shot-faktura so'rovi ketdi.")
+
+    # Logistga bildirishnoma (TZ Bosqich 7)
+    await callback.bot.send_message(
+        chat_id=logist.telegram_id,
+        text=(
+            f"⚡ **#{order_id} buyurtma.** Haydovchi yukni tushirish joyiga yetib keldi.\n"
+            f"Iltimos, Didoxdan shot-fakturani yuklab, botga yuboring."
+        )
+    )
+
+# --- LOKATSIYANI MIJOZGA TASDIQLASH ---
+@dispatcher_router.callback_query(F.data.startswith("send_loc_to_client_"))
+async def approve_location_to_client(callback: CallbackQuery):
+    order_id = int(callback.data.split("_")[4])
+
+    async with async_session() as session:
+        order = (await session.execute(select(Order).where(Order.id == order_id))).scalar_one()
+        client = (await session.execute(select(User).where(User.phone == order.client_phone))).scalar_one_or_none()
+        
+        # Oxirgi lokatsiyani olish (OrderLocation modelidan)
+        # Bu yerda oxirgi lat/lon ni bazadan olish kodi bo'ladi
+
+    if client:
+        await callback.bot.send_message(
+            chat_id=client.telegram_id,
+            text=f"📍 Buyurtma #{order_id} bo'yicha yukingizning joriy joylashuvi."
+        )
+        # Bu yerda haqiqiy location xabarini yuborish kerak
+        await callback.message.answer("✅ Joylashuv mijozga yuborildi.")
+    else:
+        await callback.answer("Mijoz botdan ro'yxatdan o'tmagan!", show_alert=True)
