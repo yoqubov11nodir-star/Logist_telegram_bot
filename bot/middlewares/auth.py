@@ -1,9 +1,12 @@
 from typing import Any, Awaitable, Callable, Dict
 from aiogram import BaseMiddleware
-from aiogram.types import TelegramObject
+from aiogram.types import TelegramObject, Message, CallbackQuery
 from sqlalchemy import select
 from database.session import async_session
-from database.models import User, UserRole, Order
+from database.models import User, UserRole
+
+# Founder keyboardini rolni tayinlash tugmalari uchun import qilamiz
+from bot.keyboards.founder_kb import get_set_role_keyboard
 
 class AuthMiddleware(BaseMiddleware):
     async def __call__(
@@ -17,32 +20,45 @@ class AuthMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         async with async_session() as session:
-            # 1. Bazadan foydalanuvchini qidirish
-            result = await session.execute(
+            # Foydalanuvchini bazadan qidiramiz
+            res = await session.execute(
                 select(User).where(User.telegram_id == tg_user.id)
             )
-            user = result.scalar_one_or_none()
+            user = res.scalar_one_or_none()
 
-            # 2. Yangi user bo'lsa yaratish
+            # 1. Agar foydalanuvchi bazada yo'q bo'lsa (yangi foydalanuvchi)
             if not user:
                 user = User(
                     telegram_id=tg_user.id,
-                    full_name=tg_user.full_name,
+                    full_name=tg_user.full_name or "Noma'lum",
                     username=tg_user.username,
                     role=UserRole.PENDING
                 )
                 session.add(user)
                 await session.commit()
-                await session.refresh(user)
+                await session.refresh(user) # ID larni yangilab olish uchun
 
-            # 3. Agar raqami bor bo'lsa va hali PENDING bo'lsa, MIJOZligini tekshirish
-            if user.role == UserRole.PENDING and user.phone:
-                order_check = await session.execute(
-                    select(Order).where(Order.client_phone == user.phone).limit(1)
-                )
-                if order_check.scalar_one_or_none():
-                    user.role = UserRole.CLIENT
-                    await session.commit()
+                # 2. Founderga xabar yuborish
+                FOUNDER_ID = 1687872138  # Sizning ID raqamingiz
+                bot = data.get("bot") # Bot obyektini data'dan olamiz
+                
+                try:
+                    await bot.send_message(
+                        chat_id=FOUNDER_ID,
+                        text=(
+                            f"🔔 **Yangi foydalanuvchi botga kirdi!**\n\n"
+                            f"👤 Ismi: {user.full_name}\n"
+                            f"🆔 ID: {user.telegram_id}\n"
+                            f"🔗 Username: @{user.username if user.username else 'Yo\'q'}\n\n"
+                            f"Ushbu foydalanuvchi tizimda foydalanishi uchun rol tayinlang:"
+                        ),
+                        reply_markup=get_set_role_keyboard(user.telegram_id)
+                    )
+                except Exception as e:
+                    # Agar founderga xabar bormasa, logga yozamiz
+                    import logging
+                    logging.error(f"Founderga bildirishnoma yuborishda xato: {e}")
 
+            # Foydalanuvchi ma'lumotlarini keyingi handlerlarga uzatamiz
             data["user"] = user
             return await handler(event, data)

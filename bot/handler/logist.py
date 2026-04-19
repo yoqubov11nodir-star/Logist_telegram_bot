@@ -12,6 +12,7 @@ from aiogram.types import (
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select, update, func
+from aiogram.filters import Command
 
 from database.session import async_session
 from database.models import Order, OrderStatus, User, UserRole, OrderLocation
@@ -21,6 +22,7 @@ from bot.keyboards.logist_kb import get_logist_main_keyboard, get_dispatchers_ke
 from bot.keyboards.dispatcher_kb import get_dispatcher_main_keyboard
 # Kodingni eng tepasiga boshqa importlar qatoriga qo'sh:
 from bot.keyboards.admin_kb import get_admin_approve_keyboard
+from bot.keyboards.founder_kb import founder_main_kb
 
 import logging
 
@@ -60,97 +62,81 @@ async def location_timer_logic(order_id: int, bot: Bot, driver_name: str, disp_t
         if order_id in active_location_requests:
             active_location_requests.pop(order_id)
 
+
 MY_ID = 1687872138
 
-@logist_router.message(F.text == "/start")
+@logist_router.message(Command("start"))
 async def cmd_start(message: Message, user: User):
-    """
-    Middleware orqali kelgan user ma'lumotlarini tekshirish va 
-    tegishli menyuni chiqarish funksiyasi.
-    """
-    
-    # 1. FOYDALANUVCHIDA RAQAM BORLIGINI TEKSHIRISH
-    # Agar raqami yo'q bo'lsa, u kimligini (mijoz/xodim) bilolmaymiz
+    # 1. Telefon raqami yo'q bo'lsa (Hali ro'yxatdan o'tmagan)
     if not user.phone:
+        from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
         kb = ReplyKeyboardMarkup(
             keyboard=[[KeyboardButton(text="📱 Raqamni yuborish", request_contact=True)]],
             resize_keyboard=True,
             one_time_keyboard=True
         )
         await message.answer(
-            f"Assalomu alaykum, {user.full_name}!\n"
-            f"Tizimdan to'liq foydalanish uchun telefon raqamingizni yuboring:",
+            f"Assalomu alaykum, {user.full_name}!\nBotdan foydalanish uchun telefon raqamingizni yuboring:",
             reply_markup=kb
         )
         return
 
-    # 2. MIJOZLARNI FILTRLASH
-    # Agar raqami bor bo'lsa va Middleware uni CLIENT deb belgilagan bo'lsa
-    if user.role == UserRole.CLIENT:
-        await message.answer(
-            "📦 Xush kelibsiz! Siz mijoz sifatida tizimdasiz.\n"
-            "Buyurtmalaringiz holatini shu yerda kuzatib borishingiz mumkin.",
-            reply_markup=ReplyKeyboardRemove()
-        )
-        # Agar mijoz menyusi bo'lsa, shu yerda reply_markup-ga biriktirishing mumkin
+    # 2. FOUNDER (Asoschi) bo'lsa
+    if user.role == UserRole.FOUNDER:
+        try:
+            from bot.keyboards.founder_kb import founder_main_kb
+            await message.answer(f"👑 Xush kelibsiz, Asoschi!", reply_markup=founder_main_kb)
+        except:
+            await message.answer("👑 Xush kelibsiz, Asoschi!")
         return
 
-    # 3. TASDIQLANMAGAN XODIMLARNI FILTRLASH (PENDING)
-    # Agar raqami bor, lekin hali admin rol bermagan bo'lsa
+    # 3. TASDIQLANGAN XODIMLAR (Roli berilganlar)
+    if user.role != UserRole.PENDING:
+        # Logist uchun
+        if user.role == UserRole.LOGIST:
+            from bot.keyboards.logist_kb import get_logist_main_keyboard
+            await message.answer("🚛 Xush kelibsiz, Logist!", reply_markup=get_logist_main_keyboard())
+        
+        # Dispetcher uchun
+        elif user.role == UserRole.DISPATCHER:
+            from bot.keyboards.dispatcher_kb import get_dispatcher_main_keyboard
+            await message.answer("🎧 Xush kelibsiz, Dispetcher!", reply_markup=get_dispatcher_main_keyboard())
+            
+        # Haydovchi uchun
+        elif user.role == UserRole.DRIVER:
+            from bot.keyboards.driver_kb import get_driver_main_keyboard # Agar mavjud bo'lsa
+            await message.answer("👨‍✈️ Xush kelibsiz, Haydovchi!", reply_markup=get_driver_main_keyboard())
+            
+        # Kassir uchun
+        elif user.role == UserRole.CASHIER:
+            from bot.keyboards.cashier_kb import get_cashier_main_keyboard # Agar mavjud bo'lsa
+            await message.answer("💵 Xush kelibsiz, Kassir!", reply_markup=get_cashier_main_keyboard())
+        
+        return
+
+    # 4. PENDING (Kutayotganlar - xali roli yo'qlar)
     if user.role == UserRole.PENDING:
         try:
+            from bot.keyboards.founder_kb import get_admin_approve_keyboard # Importni tekshiring
             admin_text = (
                 f"<b>🔔 Yangi xodim so'rovi!</b>\n\n"
                 f"👤 Ism: {user.full_name}\n"
                 f"📱 Raqam: {user.phone}\n"
                 f"🆔 ID: <code>{user.telegram_id}</code>\n"
-                f"📱 Username: @{user.username or 'yoq'}\n\n"
-                f"Ushbu xodimga tizimda rol bering:"
+                f"Username: @{user.username or 'yoq'}\n\n"
+                f"Ushbu xodimga rol bering:"
             )
             
             await message.bot.send_message(
-                chat_id=MY_ID,
-                text=admin_text,
+                chat_id=MY_ID, 
+                text=admin_text, 
                 parse_mode="HTML",
                 reply_markup=get_admin_approve_keyboard(user.telegram_id)
             )
         except Exception as e:
-            logging.error(f"Founderga xabar yuborishda xato: {e}")
+            logging.error(f"❌ Founderga xabar yuborishda xato: {e}")
 
-        await message.answer(
-            "⏳ Sizning ma'lumotlaringiz adminga yuborildi.\n"
-            "Iltimos, admin tasdiqlashini kuting."
-        )
-        return
-
-    # 4. TASDIQLANGAN ROLLLAR UCHUN MENYULAR
-    # Agar roli PENDING emas va CLIENT ham emas bo'lsa, demak bu tasdiqlangan xodim
-    
-    if user.role == UserRole.FOUNDER:
-        from bot.keyboards.founder_kb import founder_main_kb
-        await message.answer(
-            f"👑 Xush kelibsiz, Asoschi {user.full_name}!", 
-            reply_markup=founder_main_kb
-        )
-    
-    elif user.role == UserRole.LOGIST:
-        await message.answer(
-            f"🚛 Xush kelibsiz, Logist {user.full_name}!", 
-            reply_markup=get_logist_main_keyboard()
-        )
-    
-    elif user.role == UserRole.DISPATCHER:
-        from bot.keyboards.dispatcher_kb import get_dispatcher_main_keyboard
-        await message.answer(
-            f"🎧 Xush kelibsiz, Dispetcher {user.full_name}!", 
-            reply_markup=get_dispatcher_main_keyboard()
-        )
-    
-    elif user.role == UserRole.DRIVER:
-        await message.answer(f"🚚 Xush kelibsiz, Haydovchi {user.full_name}!")
-    
-    elif user.role == UserRole.CASHIER:
-        await message.answer(f"💰 Xush kelibsiz, Kassir {user.full_name}!")
+        await message.answer("⏳ Sizning so'rovingiz admin tasdig'ida. Iltimos, kutib turing.")
         
 # --- BUYURTMALAR RO'YXATI ---
 @logist_router.message(F.text == "📋 Buyurtmalarim")
@@ -169,34 +155,23 @@ async def my_orders(message: Message):
 # --- 2. KONTAKTNI QABUL QILISH (Yangi qo'shildi) ---
 @logist_router.message(F.contact)
 async def handle_contact(message: Message, user: User):
-    """Raqam yuborilganda uni saqlash va rolni aniqlash"""
     phone = message.contact.phone_number
     if not phone.startswith("+"):
         phone = "+" + phone
 
     async with async_session() as session:
-        # 1. User raqamini bazada yangilaymiz
+        # Raqamni saqlaymiz
         await session.execute(
-            update(User).where(User.id == user.id).values(phone=phone)
+            update(User).where(User.telegram_id == user.telegram_id).values(phone=phone)
         )
-        
-        # 2. Bu raqam biror buyurtmada mijoz sifatida bormi?
-        order_res = await session.execute(
-            select(Order).where(Order.client_phone == phone).limit(1)
-        )
-        is_client_order = order_res.scalar_one_or_none()
+        await session.commit()
 
-        if is_client_order:
-            # Raqam topildi -> Demak bu MIJOZ
-            await session.execute(
-                update(User).where(User.id == user.id).values(role=UserRole.CLIENT)
-            )
-            await session.commit()
-            await message.answer("✅ Tizim sizni mijoz sifatida tanidi!", reply_markup=ReplyKeyboardRemove())
-        else:
-            # Raqam buyurtmalarda yo'q -> Demak bu XODIM (PENDING bo'lib qoladi)
-            await session.commit()
-            await message.answer("✅ Raqamingiz qabul qilindi.")
+    # Raqam qabul qilinganda tugmani yo'qotish
+    await message.answer(
+        f"✅ Raqamingiz ({phone}) muvaffaqiyatli qabul qilindi.\n\n"
+        "Botni ishga tushirish uchun /start buyrug'ini bosing.", 
+        reply_markup=ReplyKeyboardRemove()
+    )
 
 # --- STATISTIKA ---
 @logist_router.message(F.text == "📊 Statistika")
@@ -273,22 +248,17 @@ async def get_sale_price(message: Message, state: FSMContext):
 
 # BU YERDA @ BELGISI QOLIB KETGAN EDI:
 @logist_router.message(OrderCreation.waiting_for_cost_price)
-async def finish_order(message: Message, state: FSMContext, user: User): # user argumentini qo'shdik
-    # 1. Narxni raqamlardan tozalash
+async def finish_order(message: Message, state: FSMContext, user: User):
     clean_cost = "".join(filter(str.isdigit, message.text))
-    
     if not clean_cost:
-        await message.answer("❌ Iltimos, xarajat narxini faqat raqamlarda kiriting:")
+        await message.answer("❌ Xarajatni raqamda yozing:")
         return
     
-    # 2. FSM dan ma'lumotlarni olish
     data = await state.get_data()
-    
     async with async_session() as session:
         try:
-            # 3. Yangi buyurtma yaratish
             new_order = Order(
-                logist_id=user.id,        # <--- TO'G'IRLANDI: Bazadagi User ID (masalan: 1, 2, 5)
+                logist_id=user.telegram_id, # telegram_id ishlatamiz!
                 client_phone=data['c_phone'],
                 cargo_description=data['cargo'],
                 point_a=data['p_a'],
@@ -297,41 +267,23 @@ async def finish_order(message: Message, state: FSMContext, user: User): # user 
                 cost_price=float(clean_cost),
                 status=OrderStatus.NEW
             )
-            
             session.add(new_order)
             await session.commit()
-            await session.refresh(new_order) # ID sini olish uchun yangilaymiz
+            await session.refresh(new_order)
             
-            # 4. Dispetcherlarni qidirish
-            disp_result = await session.execute(
-                select(User).where(User.role == UserRole.DISPATCHER)
-            )
+            disp_result = await session.execute(select(User).where(User.role == UserRole.DISPATCHER))
             dispatchers = disp_result.scalars().all()
 
-            # 5. Keyingi bosqich uchun order_id ni saqlaymiz
             await state.update_data(current_order_id=new_order.id)
             
-            if not dispatchers:
-                await message.answer(
-                    f"✅ <b>Buyurtma #{new_order.id} saqlandi.</b>\n\n"
-                    f"⚠️ Lekin tizimda birorta ham dispetcher topilmadi!",
-                    parse_mode="HTML"
-                )
-                await state.clear()
-                return
-
-            # 6. Dispetcher tanlash klaviaturasini chiqarish
+            # Keyingi bosqich klaviaturasini chiqarish...
             await message.answer(
-                f"✅ <b>Buyurtma #{new_order.id} muvaffaqiyatli saqlandi.</b>\n\n"
-                f"Endi ushbu buyurtmani qaysi dispetcherga biriktirmoqchisiz?",
-                reply_markup=get_dispatchers_keyboard(dispatchers),
-                parse_mode="HTML"
+                f"✅ Buyurtma #{new_order.id} saqlandi.",
+                reply_markup=get_dispatchers_keyboard(dispatchers)
             )
-
         except Exception as e:
             await session.rollback()
-            logging.error(f"DATABASE ERROR in finish_order: {e}")
-            await message.answer("❌ Ma'lumotlarni saqlashda texnik xato yuz berdi.")
+            logging.error(f"Xato: {e}")
 
 # --- DISPETCHERNI BIRIKTIRISH (CALLBACK) ---
 # bot/handler/logist.py
@@ -458,3 +410,55 @@ async def handle_shot_faktura(message: Message):
             await session.rollback()
             logging.error(f"Error in handle_shot_faktura: {e}")
             await message.answer("❌ Shot-fakturani qayta ishlashda texnik xato yuz berdi.")
+
+
+# --- ROL BERISH (CALLBACK QUERY) ---
+# Sening admin_kb dagi callback_data: "set_role_LOGIST_{user_id}" formatida
+@logist_router.callback_query(F.data.startswith("set_role_"))
+async def process_callback_set_role(callback: CallbackQuery):
+    # set_role_LOGIST_5532397676 -> split qilamiz
+    data = callback.data.split("_")
+    new_role_str = data[2] # LOGIST, DISPATCHER va h.k.
+    target_user_id = int(data[3]) # 5532397676
+
+    async with async_session() as session:
+        # Rolni Enumga o'tkazamiz
+        try:
+            new_role = UserRole[new_role_str]
+            await session.execute(
+                update(User).where(User.telegram_id == target_user_id).values(role=new_role)
+            )
+            await session.commit()
+            
+            await callback.message.edit_text(f"✅ Foydalanuvchi roli <b>{new_role_str}</b> qilib belgilandi!")
+            
+            # Xodimning o'ziga xabar yuboramiz
+            try:
+                await callback.bot.send_message(
+                    chat_id=target_user_id,
+                    text=f"🎉 Tabriklaymiz! Admin so'rovingizni tasdiqladi.\nSizga <b>{new_role_str}</b> roli berildi. Botni ishlatish uchun /start bosing."
+                )
+            except: pass
+        except Exception as e:
+            logging.error(f"Rol berishda xato: {e}")
+            await callback.answer("Xatolik yuz berdi!")
+    
+    await callback.answer()
+
+
+# --- KONTAKTNI QABUL QILISH ---
+@logist_router.message(F.contact)
+async def handle_contact(message: Message, user: User):
+    phone = message.contact.phone_number
+    if not phone.startswith("+"): phone = "+" + phone
+
+    async with async_session() as session:
+        await session.execute(
+            update(User).where(User.telegram_id == user.telegram_id).values(phone=phone)
+        )
+        await session.commit()
+
+    await message.answer(
+        f"✅ Raqamingiz ({phone}) qabul qilindi.\nEndi botni ishga tushirish uchun /start buyrug'ini bosing.", 
+        reply_markup=ReplyKeyboardRemove()
+    )

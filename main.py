@@ -6,7 +6,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from dotenv import load_dotenv
-from sqlalchemy import update
+from sqlalchemy import update, select
 
 # Routerlarni import qilish
 from bot.handler.founder import founder_router 
@@ -24,24 +24,35 @@ from database.session import engine, async_session
 # .env faylini yuklash
 load_dotenv()
 
+MY_ID = 1687872138
+
 async def on_startup():
-    """Bot ishga tushganda bazani tayyorlash va adminni tayinlash"""
     logging.info("⏳ Ma'lumotlar bazasi tekshirilmoqda...")
     try:
-        # 1. Jadvallarni yaratish
+        # Jadvallarni yaratish
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         
-        # 2. Founder rolingni bazada yangilash
+        # Founder-ni tekshirish va yaratish
         async with async_session() as session:
-            stmt = (
-                update(User)
-                .where(User.telegram_id == 1687872138)
-                .values(role=UserRole.FOUNDER)
-            )
-            await session.execute(stmt)
-            await session.commit()
+            # select endi to'g'ri ishlaydi, tepada import qilingan
+            stmt = select(User).where(User.telegram_id == MY_ID)
+            res = await session.execute(stmt)
+            founder = res.scalar_one_or_none()
+
+            if not founder:
+                founder = User(
+                    telegram_id=MY_ID,
+                    full_name="Founder Nodir",
+                    role=UserRole.FOUNDER
+                )
+                session.add(founder)
+                logging.info("👤 Founder bazaga yangi qo'shildi.")
+            else:
+                founder.role = UserRole.FOUNDER
+                logging.info("✅ Founder allaqachon mavjud.")
             
+            await session.commit()
         logging.info("✅ Baza tayyor va Founder roli tasdiqlandi!")
     except Exception as e:
         logging.error(f"❌ Startup xatosi: {e}")
@@ -60,7 +71,10 @@ async def main():
     # 2. Bot va Dispatcher
     bot = Bot(
         token=os.getenv("BOT_TOKEN"),
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+        default=DefaultBotProperties(
+            parse_mode=ParseMode.HTML,
+            link_preview_is_disabled=True  # GLOBAL REKLAMANI O'CHIRISH SHU YERDA
+        )
     )
     dp = Dispatcher()
 

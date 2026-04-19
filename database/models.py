@@ -5,15 +5,13 @@ from sqlalchemy.orm import relationship, declarative_base
 
 Base = declarative_base()
 
-# --- ENUMLAR ---
-
 class UserRole(enum.Enum):
     FOUNDER = "FOUNDER"
     LOGIST = "LOGIST"
     DISPATCHER = "DISPATCHER"
     DRIVER = "DRIVER"
     CASHIER = "CASHIER"
-    CLIENT = "CLIENT"     # <--- SHU BO'LISHI SHART
+    CLIENT = "CLIENT"
     PENDING = "PENDING"
 
 class OrderStatus(enum.Enum):
@@ -23,12 +21,11 @@ class OrderStatus(enum.Enum):
     LOADING = "LOADING"
     ON_WAY = "ON_WAY"
     DIDOX_PENDING = "DIDOX_PENDING"
+    DIDOX_TASDIQDA = "DIDOX_TASDIQDA" # Qo'shildi
     UNLOADED = "UNLOADED"
     PAID = "PAID"
-    COMPLETED = "COMPLETED"  # BU YERGA QO'SHILDI
+    COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
-
-# --- FOYDALANUVCHILAR JADVALI ---
 
 class User(Base):
     __tablename__ = "users"
@@ -41,15 +38,13 @@ class User(Base):
     card_number = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-    orders_as_logist = relationship("Order", foreign_keys="Order.logist_id", back_populates="logist")
-    orders_as_dispatcher = relationship("Order", foreign_keys="Order.dispatcher_id", back_populates="dispatcher")
-    orders_as_driver = relationship("Order", foreign_keys="Order.driver_id", back_populates="driver")
-
-# --- BUYURTMALAR JADVALI ---
+    # Relationship back_populates to'g'irlandi
+    orders_as_logist = relationship("Order", foreign_keys="Order.logist_id", back_populates="logist_rel")
+    orders_as_dispatcher = relationship("Order", foreign_keys="Order.dispatcher_id", back_populates="dispatcher_rel")
+    orders_as_driver = relationship("Order", foreign_keys="Order.driver_id", back_populates="driver_rel")
 
 class Order(Base):
     __tablename__ = "orders"
-
     id = Column(Integer, primary_key=True, autoincrement=True)
     
     logist_id = Column(BigInteger, ForeignKey("users.telegram_id"), nullable=False)
@@ -65,18 +60,17 @@ class Order(Base):
     
     sale_price = Column(Float, nullable=False, default=0.0)
     cost_price = Column(Float, nullable=False, default=0.0)
+    location_confirmed = Column(DateTime, nullable=True) # Scheduler uchun qo'shildi
     
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    # Xatolikni oldini olish uchun updated_at qo'shildi
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
-    logist = relationship("User", foreign_keys=[logist_id], back_populates="orders_as_logist")
-    dispatcher = relationship("User", foreign_keys=[dispatcher_id], back_populates="orders_as_dispatcher")
-    driver = relationship("User", foreign_keys=[driver_id], back_populates="orders_as_driver")
+    # Nomlar o'zgartirildi (conflict bo'lmasligi uchun)
+    logist_rel = relationship("User", foreign_keys=[logist_id], back_populates="orders_as_logist")
+    dispatcher_rel = relationship("User", foreign_keys=[dispatcher_id], back_populates="orders_as_dispatcher")
+    driver_rel = relationship("User", foreign_keys=[driver_id], back_populates="orders_as_driver")
     
     locations = relationship("OrderLocation", back_populates="order", cascade="all, delete-orphan")
-
-# --- LOKATSIYALAR VA MEDIA ---
 
 class OrderLocation(Base):
     __tablename__ = "order_locations"
@@ -94,5 +88,4 @@ class OrderMedia(Base):
     order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
     file_id = Column(String, nullable=False) 
     file_type = Column(String) 
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    order = relationship("Order")
+    created_at = Column(DateTime, default=datetime.datetime.utcnow) 

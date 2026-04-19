@@ -7,18 +7,18 @@ scheduler = AsyncIOScheduler()
 
 async def check_location_timeout(order_id: int, bot):
     async with async_session() as session:
-        order = (await session.execute(select(Order).where(Order.id == order_id))).scalar_one()
+        result = await session.execute(select(Order).where(Order.id == order_id))
+        order = result.scalar_one_or_none()
         
-        # Agar hali ham lokatsiya tasdiqlanmagan bo'lsa
-        if not order.location_confirmed: 
-            # Logist va Dispetcherni topish
-            staff = await session.execute(
+        if order and not order.location_confirmed: 
+            staff_res = await session.execute(
                 select(User).where(User.role.in_([UserRole.LOGIST, UserRole.DISPATCHER]))
             )
-            for s in staff.scalars().all():
+            staff = staff_res.scalars().all()
+            for s in staff:
                 try:
                     await bot.send_message(
                         s.telegram_id, 
-                        f"🚨 **DIQQAT!** #{order_id}-buyurtma haydovchisi 15 daqiqadan beri lokatsiya yubormadi!"
+                        f"🚨 #{order_id}-buyurtma haydovchisi 15 daqiqadan beri lokatsiya yubormadi!"
                     )
-                except: pass
+                except: continue
