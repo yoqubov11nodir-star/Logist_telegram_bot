@@ -172,10 +172,14 @@ async def my_orders(message: Message, user: User):
     for o in orders:
         status = STATUS_UZ.get(o.status.value, o.status.value)
         kb = InlineKeyboardBuilder()
+        
         if o.status == OrderStatus.NEW:
             kb.button(text="📋 Dispetcher biriktirish", callback_data=f"reassign_disp_{o.id}")
+        elif o.status == OrderStatus.DISPATCHER_ASSIGNED:
+            kb.button(text="📌 Dispetcherni o'zgartirish", callback_data=f"reassign_disp_{o.id}")
         elif o.status == OrderStatus.ARRIVED_B:
             kb.button(text="📄 Shot-faktura yuborish", callback_data=f"send_invoice_{o.id}")
+
         kb.adjust(1)
 
         text = (
