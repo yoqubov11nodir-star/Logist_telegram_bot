@@ -70,7 +70,6 @@ async def main():
     )
     dp = Dispatcher()
 
-    # Middleware
     dp.message.outer_middleware(AuthMiddleware())
     dp.callback_query.outer_middleware(AuthMiddleware())
 
