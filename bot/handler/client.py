@@ -10,6 +10,9 @@ from database.session import async_session
 from database.models import User, Order, OrderStatus, UserRole
 from bot.keyboards.client_kb import get_client_main_keyboard
 
+from aiogram.filters import Command
+
+
 client_router = Router()
 
 STATUS_UZ = {
@@ -29,7 +32,7 @@ STATUS_UZ = {
 
 
 # ─── /start ──────────────────────────────────────────────────────────────────
-@client_router.message(F.text == "/start")
+@client_router.message(Command("start"))
 async def client_start(message: Message, user: User):
     if user.role == UserRole.CLIENT:
         await message.answer(

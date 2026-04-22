@@ -10,8 +10,51 @@ from database.models import User, UserRole, Order, OrderStatus
 from bot.states.cashier_states import CashierSteps
 from bot.keyboards.cashier_kb import get_cashier_main_keyboard
 
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+
 cashier_router = Router()
 
+@cashier_router.message(F.text == "💰 To'lov kutilayotganlar")
+async def view_unloaded_orders(message: Message, user: User):
+    if user.role != UserRole.CASHIER:
+        return
+
+    async with async_session() as session:
+        orders = (
+            await session.execute(
+                select(Order).where(Order.status == OrderStatus.UNLOADED)
+            )
+        ).scalars().all()
+
+    if not orders:
+        await message.answer("📭 Hozirda to'lov kutayotgan buyurtmalar yo'q.")
+        return
+
+    for order in orders:
+        async with async_session() as session:
+            driver = (
+                await session.execute(select(User).where(User.telegram_id == order.driver_id))
+            ).scalar_one_or_none()
+
+        driver_name = driver.full_name if driver else "Noma'lum"
+        card = driver.card_number if driver and driver.card_number else "Kiritilmagan"
+
+        kb = InlineKeyboardBuilder()
+        kb.button(text="💳 To'lovni amalga oshirish", callback_data=f"pay_order_{order.id}")
+        kb.adjust(1)
+
+        await message.answer(
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"📦 <b>Buyurtma #{order.id}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"🚛 Haydovchi: {driver_name}\n"
+            f"💳 Karta: <code>{card}</code>\n"
+            f"📍 {order.point_a} → {order.point_b}\n"
+            f"💰 To'lov summasi: <b>{order.cost_price:,.0f} so'm</b>\n"
+            f"━━━━━━━━━━━━━━━━━━",
+            reply_markup=kb.as_markup(),
+            parse_mode="HTML",
+        )
 
 # ─── TO'LOV BOSHLASH ─────────────────────────────────────────────────────────
 @cashier_router.callback_query(F.data.startswith("pay_order_"))
@@ -50,7 +93,10 @@ async def handle_payment_receipt(message: Message, state: FSMContext):
 
     async with async_session() as session:
         order      = (await session.execute(select(Order).where(Order.id == order_id))).scalar_one()
+        order.status = OrderStatus.PAID
+        await session.commit()
         order.status = OrderStatus.COMPLETED
+
         driver     = (await session.execute(select(User).where(User.telegram_id == order.driver_id))).scalar_one_or_none()
         logist     = (await session.execute(select(User).where(User.telegram_id == order.logist_id))).scalar_one_or_none()
         dispatcher = (await session.execute(select(User).where(User.telegram_id == order.dispatcher_id))).scalar_one_or_none()

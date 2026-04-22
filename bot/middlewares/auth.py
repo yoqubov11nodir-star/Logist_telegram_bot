@@ -9,8 +9,10 @@ from sqlalchemy import update
 from database.session import async_session
 from database.models import User, UserRole
 
-FOUNDER_ID = 1687872138  # .env ga ko'chirish tavsiya etiladi
-
+import os
+from dotenv import load_dotenv
+load_dotenv()
+FOUNDER_ID = int(os.getenv("FOUNDER_ID", 0))
 
 class AuthMiddleware(BaseMiddleware):
     async def __call__(

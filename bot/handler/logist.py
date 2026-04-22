@@ -22,13 +22,16 @@ from bot.keyboards.dispatcher_kb import get_dispatcher_main_keyboard
 from bot.keyboards.admin_kb import get_admin_approve_keyboard
 from bot.keyboards.founder_kb import founder_main_kb
 
+import os
+
 logist_router     = Router()
 logist_doc_router = Router()   # PDF hujjatlar uchun alohida router
 
 # ─── Global taymer lug'ati ────────────────────────────────────────────────────
 active_location_requests: dict = {}
 
-FOUNDER_ID = 1687872138  # Founder Telegram ID
+FOUNDER_ID = int(os.getenv("FOUNDER_ID", 0))
+
 
 STATUS_UZ = {
     "NEW":                 "🆕 Yangi",
@@ -226,7 +229,6 @@ async def show_stats(message: Message, user: User):
         f"📅 Bugun yaratilgan: {today_count} ta",
         parse_mode="HTML",
     )
-
 
 # ─── YANGI BUYURTMA (FSM) ────────────────────────────────────────────────────
 @logist_router.message(F.text == "➕ Yangi buyurtma")
