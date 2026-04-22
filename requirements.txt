@@ -4,5 +4,3 @@ asyncpg==0.31.0
 greenlet==3.4.0
 alembic==1.14.0
 python-dotenv==1.0.1
-apscheduler==3.10.4
-aiofiles==24.1.0
