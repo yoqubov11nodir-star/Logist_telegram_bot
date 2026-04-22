@@ -93,9 +93,12 @@ async def handle_payment_receipt(message: Message, state: FSMContext):
 
     async with async_session() as session:
         order      = (await session.execute(select(Order).where(Order.id == order_id))).scalar_one()
+        
         order.status = OrderStatus.PAID
         await session.commit()
+
         order.status = OrderStatus.COMPLETED
+        await session.commit()
 
         driver     = (await session.execute(select(User).where(User.telegram_id == order.driver_id))).scalar_one_or_none()
         logist     = (await session.execute(select(User).where(User.telegram_id == order.logist_id))).scalar_one_or_none()
