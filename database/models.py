@@ -57,12 +57,21 @@ class Order(Base):
     driver_id         = Column(BigInteger, ForeignKey("users.telegram_id"), nullable=True)
     status            = Column(SqlEnum(OrderStatus), default=OrderStatus.NEW)
     cargo_description = Column(String, nullable=False)
-    point_a           = Column(String, nullable=False)
-    point_b           = Column(String, nullable=False)
+
+    # A nuqta: nom (matn) + joylashuv (ixtiyoriy)
+    point_a           = Column(String, nullable=False)       # longitude (location tashlansa)
+
+    # B nuqta: nom (matn) + joylashuv (ixtiyoriy)          # matn manzil
+    point_a_lat       = Column(Float,  nullable=True)           # latitude  (location tashlansa)
+    point_a_lon       = Column(Float,  nullable=True)    
+    point_b           = Column(String, nullable=False)          # matn manzil
+    point_b_lat       = Column(Float,  nullable=True)
+    point_b_lon       = Column(Float,  nullable=True)
+
     client_phone      = Column(String, nullable=False)
     vehicle_number    = Column(String, nullable=True)
-    sale_price        = Column(Float, nullable=False, default=0.0)
-    cost_price        = Column(Float, nullable=False, default=0.0)
+    sale_price        = Column(Float,  nullable=False, default=0.0)
+    cost_price        = Column(Float,  nullable=False, default=0.0)
     created_at        = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at        = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 

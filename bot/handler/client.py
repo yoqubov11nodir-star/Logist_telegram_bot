@@ -9,9 +9,7 @@ from sqlalchemy import select
 from database.session import async_session
 from database.models import User, Order, OrderStatus, UserRole
 from bot.keyboards.client_kb import get_client_main_keyboard
-
 from aiogram.filters import Command
-
 
 client_router = Router()
 
@@ -31,7 +29,6 @@ STATUS_UZ = {
 }
 
 
-# ─── /start ──────────────────────────────────────────────────────────────────
 @client_router.message(Command("start"))
 async def client_start(message: Message, user: User):
     if user.role == UserRole.CLIENT:
@@ -46,6 +43,8 @@ async def client_start(message: Message, user: User):
 # ─── BUYURTMALARIM ───────────────────────────────────────────────────────────
 @client_router.message(F.text == "📦 Buyurtmalarim")
 async def client_orders_list(message: Message, user: User):
+    if user.role != UserRole.CLIENT:
+        return
     async with async_session() as session:
         orders = (
             await session.execute(
@@ -62,16 +61,20 @@ async def client_orders_list(message: Message, user: User):
     for o in orders:
         status_name = STATUS_UZ.get(o.status.value, o.status.value)
         kb = InlineKeyboardBuilder()
+
+        # Statusga qarab tugmalar
         if o.status == OrderStatus.ON_WAY:
             kb.button(text="📍 Yukingiz qayerda?", callback_data=f"ask_driver_loc_{o.id}")
 
+        # Tugaganlar uchun ham ko'rsatish
         markup = kb.as_markup() if kb.export() else None
         await message.answer(
             f"━━━━━━━━━━━━━━━━━━\n"
             f"📦 <b>Buyurtma #{o.id}</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"📦 Yuk: {o.cargo_description}\n"
-            f"📍 {o.point_a} → {o.point_b}\n"
+            f"🔵 Yuklash: {o.point_a}\n"
+            f"🔴 Tushirish: {o.point_b}\n"
             f"📊 <b>Holat: {status_name}</b>\n"
             f"━━━━━━━━━━━━━━━━━━",
             reply_markup=markup,
@@ -79,9 +82,11 @@ async def client_orders_list(message: Message, user: User):
         )
 
 
-# ─── YUKIM QAYERDA (umumiy tugma) ────────────────────────────────────────────
+# ─── YUKIM QAYERDA ───────────────────────────────────────────────────────────
 @client_router.message(F.text == "📍 Yukim qayerda?")
 async def where_is_my_cargo_general(message: Message, user: User):
+    if user.role != UserRole.CLIENT:
+        return
     async with async_session() as session:
         orders = (
             await session.execute(
@@ -105,7 +110,7 @@ async def where_is_my_cargo_general(message: Message, user: User):
         kb.button(text="📍 Lokatsiyani so'rash", callback_data=f"ask_driver_loc_{o.id}")
         await message.answer(
             f"🚚 <b>#{o.id} buyurtma yo'lda</b>\n"
-            f"📍 {o.point_a} → {o.point_b}\n\n"
+            f"🔵 {o.point_a} → 🔴 {o.point_b}\n\n"
             f"Lokatsiyani so'rash uchun bosing 👇",
             reply_markup=kb.as_markup(),
             parse_mode="HTML",
@@ -124,50 +129,47 @@ async def client_trigger_location(callback: CallbackQuery, user: User):
         if not order:
             await callback.answer("Buyurtma topilmadi!", show_alert=True)
             return
-
         driver = (await session.execute(select(User).where(User.telegram_id == order.driver_id))).scalar_one_or_none()
         logist = (await session.execute(select(User).where(User.telegram_id == order.logist_id))).scalar_one_or_none()
         disp   = (await session.execute(select(User).where(User.telegram_id == order.dispatcher_id))).scalar_one_or_none()
 
-    # Logistga xabar
     if logist and logist.telegram_id:
         try:
             await callback.bot.send_message(
                 logist.telegram_id,
                 f"⚡ <b>Mijoz #{order_id} yukining qayerdaligini so'radi</b>\n"
-                f"👤 Mijoz: {user.full_name}\n"
+                f"👤 Mijoz: {user.full_name or user.phone}\n"
                 f"📦 Yuk: {order.cargo_description}\n"
-                f"📍 {order.point_a} → {order.point_b}",
+                f"🔵 {order.point_a} → 🔴 {order.point_b}",
                 parse_mode="HTML",
             )
         except Exception:
             pass
 
-    # Dispetcherga xabar
     if disp and disp.telegram_id:
         try:
             await callback.bot.send_message(
                 disp.telegram_id,
                 f"⚡ <b>Mijoz #{order_id} yukining qayerdaligini so'radi</b>\n"
-                f"👤 Mijoz: {user.full_name}\n"
+                f"👤 Mijoz: {user.full_name or user.phone}\n"
                 f"📦 Yuk: {order.cargo_description}\n"
-                f"📍 {order.point_a} → {order.point_b}\n\n"
+                f"🔵 {order.point_a} → 🔴 {order.point_b}\n\n"
                 f"Haydovchiga lokatsiya yuborishni so'rang.",
                 parse_mode="HTML",
             )
         except Exception:
             pass
 
-    # Haydovchiga xabar
     if driver and driver.telegram_id:
         kb = InlineKeyboardBuilder()
         kb.button(text="📍 Lokatsiyamni yuborish", callback_data=f"act_on_way_{order_id}")
         try:
             await callback.bot.send_message(
                 driver.telegram_id,
-                f"📣 <b>Diqqat! Mijoz yukingiz qayerdaligini bilmoqchi!</b>\n\n"
+                f"📣 <b>DIQQAT! Mijoz qayerdaligingizni bilmoqchi!</b>\n\n"
                 f"📦 Buyurtma: <b>#{order_id}</b>\n"
-                f"🗺 {order.point_a} → {order.point_b}\n\n"
+                f"🔵 {order.point_a} → 🔴 {order.point_b}\n"
+                f"📦 Yuk: {order.cargo_description}\n\n"
                 f"⬇️ Lokatsiyangizni yuboring:",
                 reply_markup=kb.as_markup(),
                 parse_mode="HTML",
@@ -175,7 +177,6 @@ async def client_trigger_location(callback: CallbackQuery, user: User):
         except Exception:
             pass
 
-        # 15 daqiqa taymerini ishga tushirish
         if logist and disp:
             asyncio.create_task(location_timer_logic(
                 order_id, callback.bot,

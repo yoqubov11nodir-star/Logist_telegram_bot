@@ -5,6 +5,7 @@ def get_dispatcher_main_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📥 Yangi buyurtmalar")],
+            [KeyboardButton(text="📋 Buyurtmalarim")],
             [KeyboardButton(text="📊 Mening statistikam")],
         ],
         resize_keyboard=True,

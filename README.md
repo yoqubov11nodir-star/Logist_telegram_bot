@@ -239,4 +239,4 @@ pip install -r requirements.txt
 
 ## 📝 Litsenziya
 
-Ushbu kod OMON Logistics uchun yozilgan. Barcha huquqlar himoyalangan.
+Ushbu kod OMON Logistics uchun yozilgan.
