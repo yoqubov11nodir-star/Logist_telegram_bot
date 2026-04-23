@@ -297,20 +297,6 @@ async def show_stats(message: Message, user: User):
     )
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# YANGI BUYURTMA FSM
-# Jarayon:
-#   1. Mijoz ismi
-#   2. Mijoz telefon
-#   3. Yuk tavsifi
-#   4. A nuqta MANZILI (matn) ← bot: "A nuqta manzilini kiriting"
-#   5. A nuqta LOCATION     ← bot: "A nuqta lokatsiyasini tashlang"
-#   6. B nuqta MANZILI (matn) ← bot: "B nuqta manzilini kiriting"
-#   7. B nuqta LOCATION     ← bot: "B nuqta lokatsiyasini tashlang"
-#   8. Sotish narxi
-#   9. Xarajat narxi
-# ═══════════════════════════════════════════════════════════════════════════════
-
 @logist_router.message(F.text == "➕ Yangi buyurtma")
 async def start_order(message: Message, user: User, state: FSMContext):
     if user.role != UserRole.LOGIST:
@@ -468,7 +454,6 @@ async def get_point_b_location_fallback(message: Message, state: FSMContext):
         "⚠️ <b>Lokatsiya majburiy — o'tkazib bo'lmaydi!</b>",
         parse_mode="HTML",
     )
-
 
 
 # 8. Sotish narxi

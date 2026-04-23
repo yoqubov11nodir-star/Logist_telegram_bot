@@ -389,14 +389,15 @@ async def driver_location_update(message: Message, user: User, state: FSMContext
     if not orders:
         return
 
-    for order in orders:
-        async with async_session() as s2:
+    # Bitta session — N+1 yo'q
+    async with async_session() as s2:
+        for order in orders:
             s2.add(OrderLocation(
                 order_id=order.id,
                 latitude=message.location.latitude,
                 longitude=message.location.longitude,
             ))
-            await s2.commit()
+        await s2.commit()
 
         if order.dispatcher_id:
             try:

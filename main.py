@@ -73,7 +73,6 @@ async def main():
     dp.message.outer_middleware(AuthMiddleware())
     dp.callback_query.outer_middleware(AuthMiddleware())
 
-    # Routerlar (tartib muhim: logist_doc_router logist_router dan oldin)
     dp.include_router(founder_router)
     dp.include_router(logist_doc_router)
     dp.include_router(logist_router)
