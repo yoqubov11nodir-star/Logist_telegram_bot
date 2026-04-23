@@ -3,7 +3,6 @@ import logging
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
-from aiogram.filters import Command
 from sqlalchemy import select
  
 from database.session import async_session
@@ -13,14 +12,6 @@ from bot.keyboards.cashier_kb import get_cashier_main_keyboard
 from aiogram.utils.keyboard import InlineKeyboardBuilder
  
 cashier_router = Router()
- 
-@cashier_router.message(Command("start"))
-async def cashier_start(message: Message, user: User):
-    if user.role == UserRole.CASHIER:
-        await message.answer(
-            "💵 <b>Xush kelibsiz, Kassir!</b>\n\nTo'lov kutayotgan buyurtmalarni ko'rish uchun tugmani bosing.",
-            reply_markup=get_cashier_main_keyboard(), parse_mode="HTML",
-        )
  
 @cashier_router.message(F.text == "💰 To'lov kutilayotganlar")
 async def view_unloaded_orders(message: Message, user: User):
@@ -65,7 +56,10 @@ async def view_unloaded_orders(message: Message, user: User):
         )
  
 @cashier_router.callback_query(F.data.startswith("pay_order_"))
-async def process_payment_start(callback: CallbackQuery, state: FSMContext):
+async def process_payment_start(callback: CallbackQuery, state: FSMContext, user: User):
+    if user.role != UserRole.CASHIER:
+        await callback.answer("Bu amal faqat kassir uchun!", show_alert=True)
+        return
     order_id = int(callback.data.split("_")[2])
     async with async_session() as session:
         order = (await session.execute(select(Order).where(Order.id == order_id))).scalar_one_or_none()

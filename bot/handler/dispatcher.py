@@ -5,9 +5,8 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.filters import Command
 from sqlalchemy import select, update
- 
+
 from database.session import async_session
 from database.models import User, UserRole, Order, OrderStatus, OrderMedia, OrderLocation
 from bot.keyboards.dispatcher_kb import get_dispatcher_main_keyboard
@@ -49,13 +48,6 @@ class DispatcherStates(StatesGroup):
     waiting_for_driver_fullname      = State()
     waiting_for_driver_reg_photo     = State()
     waiting_for_driver_lic_photo     = State()
- 
- 
-# ─── /start ──────────────────────────────────────────────────────────────────
-@dispatcher_router.message(Command("start"))
-async def dispatcher_start(message: Message, user: User):
-    if user.role == UserRole.DISPATCHER:
-        await message.answer("🎧 Xush kelibsiz, Dispetcher!", reply_markup=get_dispatcher_main_keyboard())
  
  
 # ─── YANGI BUYURTMALAR ───────────────────────────────────────────────────────

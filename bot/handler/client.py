@@ -9,7 +9,6 @@ from sqlalchemy import select
 from database.session import async_session
 from database.models import User, Order, OrderStatus, UserRole
 from bot.keyboards.client_kb import get_client_main_keyboard
-from aiogram.filters import Command
 
 client_router = Router()
 
@@ -27,17 +26,6 @@ STATUS_UZ = {
     "COMPLETED":           "✅ Yakunlandi",
     "CANCELLED":           "❌ Bekor qilindi",
 }
-
-
-@client_router.message(Command("start"))
-async def client_start(message: Message, user: User):
-    if user.role == UserRole.CLIENT:
-        await message.answer(
-            "👋 <b>Xush kelibsiz!</b>\n\n"
-            "Quyidagi tugmalar orqali yukingiz holatini kuzatishingiz mumkin.",
-            reply_markup=get_client_main_keyboard(),
-            parse_mode="HTML",
-        )
 
 
 # ─── BUYURTMALARIM ───────────────────────────────────────────────────────────

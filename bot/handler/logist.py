@@ -479,7 +479,7 @@ async def finish_order(message: Message, state: FSMContext, user: User):
     data = await state.get_data()
 
     # Majburiy tekshiruv: A va B lokatsiya bo'lishi shart
-    if not data.get("p_a_lat") or not data.get("p_a_lon"):
+    if data.get("p_a_lat") is None or data.get("p_a_lon") is None:
         await message.answer(
             "❌ <b>A nuqta lokatsiyasi kiritilmagan!</b>\n\n"
             "Buyurtma yaratish uchun A va B nuqta lokatsiyalari majburiy.\n"
@@ -488,7 +488,7 @@ async def finish_order(message: Message, state: FSMContext, user: User):
         )
         await state.clear()
         return
-    if not data.get("p_b_lat") or not data.get("p_b_lon"):
+    if data.get("p_b_lat") is None or data.get("p_b_lon") is None:
         await message.answer(
             "❌ <b>B nuqta lokatsiyasi kiritilmagan!</b>\n\n"
             "Buyurtma yaratish uchun A va B nuqta lokatsiyalari majburiy.\n"

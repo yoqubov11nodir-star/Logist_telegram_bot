@@ -58,11 +58,9 @@ class Order(Base):
     status            = Column(SqlEnum(OrderStatus), default=OrderStatus.NEW)
     cargo_description = Column(String, nullable=False)
 
-    # A nuqta: nom (matn) + joylashuv (ixtiyoriy)
-    point_a           = Column(String, nullable=False)       # longitude (location tashlansa)
-
-    # B nuqta: nom (matn) + joylashuv (ixtiyoriy)          # matn manzil
-    point_a_lat       = Column(Float,  nullable=True)           # latitude  (location tashlansa)
+    # A nuqta: nom (matn) + joylashuv
+    point_a           = Column(String, nullable=False)
+    point_a_lat       = Column(Float,  nullable=True)
     point_a_lon       = Column(Float,  nullable=True)    
     point_b           = Column(String, nullable=False)          # matn manzil
     point_b_lat       = Column(Float,  nullable=True)

@@ -389,7 +389,6 @@ async def driver_location_update(message: Message, user: User, state: FSMContext
     if not orders:
         return
 
-    # Bitta session — N+1 yo'q
     async with async_session() as s2:
         for order in orders:
             s2.add(OrderLocation(
@@ -399,6 +398,7 @@ async def driver_location_update(message: Message, user: User, state: FSMContext
             ))
         await s2.commit()
 
+    for order in orders:
         if order.dispatcher_id:
             try:
                 await message.bot.send_location(
@@ -658,7 +658,7 @@ async def save_card(message: Message, state: FSMContext, user: User):
         )
         return
 
-    # Formatlash: 1234 5678 9012 3456
+    # Ex: 1234 5678 9012 3456
     formatted_card = " ".join([raw_card[i:i+4] for i in range(0, 16, 4)])
 
     async with async_session() as session:
