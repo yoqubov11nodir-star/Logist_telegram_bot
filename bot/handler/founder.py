@@ -37,6 +37,13 @@ STATUS_UZ = {
 }
 
 
+def _u(user) -> str:
+    if not user:
+        return "—"
+    phone = user.phone or "tel yo'q"
+    return f"{user.full_name} | 📱{phone}"
+
+
 # ─── BARCHA BUYURTMALAR ───────────────────────────────────────────────────────
 @founder_router.message(F.text == "📊 Barcha buyurtmalar")
 async def view_all_orders(message: Message, user: User):
@@ -53,21 +60,64 @@ async def view_all_orders(message: Message, user: User):
                 await message.answer("📭 Tizimda hali birorta ham buyurtma yaratilmagan.")
                 return
 
+            # Barcha kerakli user ID larni yig'amiz
+            user_ids = set()
+            for o in orders:
+                if o.logist_id:     user_ids.add(o.logist_id)
+                if o.dispatcher_id: user_ids.add(o.dispatcher_id)
+                if o.driver_id:     user_ids.add(o.driver_id)
+
+            users_map: dict = {}
+            if user_ids:
+                ulist = (await session.execute(
+                    select(User).where(User.telegram_id.in_(list(user_ids)))
+                )).scalars().all()
+                users_map = {u.telegram_id: u for u in ulist}
+
+            # Umumiy statistika
+            active_count    = sum(1 for o in orders if o.status not in [OrderStatus.COMPLETED, OrderStatus.PAID, OrderStatus.CANCELLED])
+            completed_count = sum(1 for o in orders if o.status in [OrderStatus.COMPLETED, OrderStatus.PAID])
+            cancelled_count = sum(1 for o in orders if o.status == OrderStatus.CANCELLED)
+
+            await message.answer(
+                f"📊 <b>BUYURTMALAR XULOSASI</b>\n\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"📋 Jami: <b>{len(orders)} ta</b>\n"
+                f"⏳ Faol: <b>{active_count} ta</b>\n"
+                f"✅ Yakunlangan: <b>{completed_count} ta</b>\n"
+                f"❌ Bekor: <b>{cancelled_count} ta</b>\n"
+                f"━━━━━━━━━━━━━━━━━━",
+                parse_mode="HTML",
+            )
+
             chunks  = []
-            current = "📋 <b>BARCHA BUYURTMALAR:</b>\n\n"
+            current = ""
 
             for o in orders:
                 sale   = o.sale_price or 0
                 cost   = o.cost_price or 0
                 profit = sale - cost
                 status = STATUS_UZ.get(o.status.value, o.status.value)
+                date   = o.created_at.strftime("%d.%m.%Y %H:%M") if o.created_at else "—"
 
+                logist_u = users_map.get(o.logist_id)
+                disp_u   = users_map.get(o.dispatcher_id)
+                driver_u = users_map.get(o.driver_id)
+
+                client_str = o.client_name or "—"
                 entry = (
                     f"🆔 <b>#{o.id}</b> — {status}\n"
-                    f"📍 {o.point_a} → {o.point_b}\n"
-                    f"📦 {o.cargo_description}\n"
-                    f"💰 Sotish: {sale:,.0f} | Xarajat: {cost:,.0f} | Foyda: {profit:,.0f}\n"
+                    f"📅 Sana: {date}\n"
                     f"━━━━━━━━━━━━━━━━━━\n"
+                    f"👤 Mijoz: {client_str} | 📱 {o.client_phone}\n"
+                    f"📍 {o.point_a} → {o.point_b}\n"
+                    f"📦 Yuk: {o.cargo_description}\n"
+                    f"🚘 Mashina: {o.vehicle_number or '—'}\n"
+                    f"👤 Logist: {_u(logist_u)}\n"
+                    f"🎧 Dispetcher: {_u(disp_u)}\n"
+                    f"🚛 Haydovchi: {_u(driver_u)}\n"
+                    f"💰 Sotish: {sale:,.0f} | Xarajat: {cost:,.0f} | Foyda: {profit:,.0f} so'm\n"
+                    f"━━━━━━━━━━━━━━━━━━\n\n"
                 )
                 if len(current) + len(entry) > 3800:
                     chunks.append(current)
@@ -94,7 +144,6 @@ async def show_total_profit(message: Message, user: User):
 
     async with async_session() as session:
         try:
-            # Yakunlangan buyurtmalar statistikasi
             stats = (
                 await session.execute(
                     select(
@@ -110,7 +159,6 @@ async def show_total_profit(message: Message, user: User):
             expense = float(stats.expense) if stats and stats.expense else 0.0
             profit  = income - expense
 
-            # Umumiy va faol
             all_count = (await session.execute(select(func.count(Order.id)))).scalar() or 0
             active_count = (
                 await session.execute(
@@ -147,8 +195,13 @@ async def staff_activity(message: Message, user: User):
         return
 
     async with async_session() as session:
+        # Founder va Pending dan tashqari barcha xodimlar
         users = (
-            await session.execute(select(User).where(User.role != UserRole.PENDING))
+            await session.execute(
+                select(User).where(
+                    User.role.notin_([UserRole.PENDING, UserRole.FOUNDER])
+                )
+            )
         ).scalars().all()
 
     roles_count: dict = {}
@@ -157,7 +210,11 @@ async def staff_activity(message: Message, user: User):
     for u in users:
         role_name = ROLE_NAMES.get(u.role.value, u.role.value)
         roles_count[role_name] = roles_count.get(role_name, 0) + 1
-        staff_lines.append(f"• {u.full_name} — {role_name}")
+        phone_str = u.phone or "tel yo'q"
+        staff_lines.append(
+            f"• <b>{u.full_name}</b>\n"
+            f"  📱 {phone_str} | {role_name}"
+        )
 
     summary = "📊 <b>Umumiy statistika:</b>\n"
     for role, count in roles_count.items():
@@ -165,7 +222,10 @@ async def staff_activity(message: Message, user: User):
 
     staff_text = "\n".join(staff_lines) or "Xodimlar topilmadi."
     await message.answer(
-        f"{summary}\n👥 <b>Xodimlar ro'yxati:</b>\n{staff_text}",
+        f"{summary}\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"👥 <b>Xodimlar ro'yxati:</b>\n\n"
+        f"{staff_text}",
         parse_mode="HTML",
     )
 
@@ -192,7 +252,8 @@ async def process_set_role(callback: CallbackQuery):
             await session.commit()
 
         await callback.message.edit_text(
-            f"✅ <b>{target.full_name}</b> — <b>{role_uz}</b> etib tayinlandi!",
+            f"✅ <b>{target.full_name}</b> — <b>{role_uz}</b> etib tayinlandi!\n"
+            f"📱 Tel: {target.phone or '—'}",
             parse_mode="HTML",
         )
         try:
@@ -211,4 +272,3 @@ async def process_set_role(callback: CallbackQuery):
     except Exception as e:
         logging.error(f"process_set_role xato: {e}")
         await callback.answer("Xatolik!")
-

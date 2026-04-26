@@ -66,6 +66,7 @@ class Order(Base):
     point_b_lat       = Column(Float,  nullable=True)
     point_b_lon       = Column(Float,  nullable=True)
 
+    client_name       = Column(String, nullable=True)
     client_phone      = Column(String, nullable=False)
     vehicle_number    = Column(String, nullable=True)
     sale_price        = Column(Float,  nullable=False, default=0.0)

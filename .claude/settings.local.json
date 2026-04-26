@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/python.exe -m py_compile bot/keyboards/admin_kb.py bot/keyboards/cashier_kb.py bot/keyboards/client_kb.py bot/keyboards/dispatcher_kb.py bot/keyboards/driver_kb.py bot/keyboards/founder_kb.py bot/keyboards/logist_kb.py bot/states/cashier_states.py bot/states/driver_states.py bot/states/logist_states.py bot/states/order_states.py)",
+      "Bash(grep -v \"^$\")",
+      "Bash(python -c ' *)",
+      "Bash(python -m py_compile bot/middlewares/auth.py bot/handler/cashier.py bot/handler/client.py bot/handler/founder.py bot/handler/dispatcher.py bot/handler/driver.py bot/handler/logist.py bot/states/logist_states.py)",
+      "Bash(python -m py_compile bot/handler/logist.py bot/handler/dispatcher.py bot/handler/driver.py bot/handler/cashier.py bot/handler/client.py bot/handler/founder.py bot/middlewares/auth.py bot/states/logist_states.py)",
+      "Bash(python -m py_compile bot/handler/driver.py bot/handler/logist.py bot/handler/dispatcher.py bot/handler/cashier.py bot/handler/client.py bot/handler/founder.py bot/middlewares/auth.py bot/states/logist_states.py)",
+      "Bash(python -m py_compile bot/handler/driver.py bot/handler/logist.py bot/handler/dispatcher.py bot/handler/cashier.py bot/handler/client.py bot/handler/founder.py)"
+    ]
+  }
+}

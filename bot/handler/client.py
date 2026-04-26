@@ -50,11 +50,9 @@ async def client_orders_list(message: Message, user: User):
         status_name = STATUS_UZ.get(o.status.value, o.status.value)
         kb = InlineKeyboardBuilder()
 
-        # Statusga qarab tugmalar
         if o.status == OrderStatus.ON_WAY:
             kb.button(text="📍 Yukingiz qayerda?", callback_data=f"ask_driver_loc_{o.id}")
 
-        # Tugaganlar uchun ham ko'rsatish
         markup = kb.as_markup() if kb.export() else None
         await message.answer(
             f"━━━━━━━━━━━━━━━━━━\n"
@@ -63,6 +61,7 @@ async def client_orders_list(message: Message, user: User):
             f"📦 Yuk: {o.cargo_description}\n"
             f"🔵 Yuklash: {o.point_a}\n"
             f"🔴 Tushirish: {o.point_b}\n"
+            f"🚘 Mashina: {o.vehicle_number or '—'}\n"
             f"📊 <b>Holat: {status_name}</b>\n"
             f"━━━━━━━━━━━━━━━━━━",
             reply_markup=markup,
@@ -70,7 +69,7 @@ async def client_orders_list(message: Message, user: User):
         )
 
 
-# ─── YUKIM QAYERDA ───────────────────────────────────────────────────────────
+# ─── YUKIM QAYERDA (menu tugmasi) ────────────────────────────────────────────
 @client_router.message(F.text == "📍 Yukim qayerda?")
 async def where_is_my_cargo_general(message: Message, user: User):
     if user.role != UserRole.CLIENT:
@@ -97,9 +96,12 @@ async def where_is_my_cargo_general(message: Message, user: User):
         kb = InlineKeyboardBuilder()
         kb.button(text="📍 Lokatsiyani so'rash", callback_data=f"ask_driver_loc_{o.id}")
         await message.answer(
-            f"🚚 <b>#{o.id} buyurtma yo'lda</b>\n"
-            f"🔵 {o.point_a} → 🔴 {o.point_b}\n\n"
-            f"Lokatsiyani so'rash uchun bosing 👇",
+            f"🚚 <b>#{o.id} buyurtma yo'lda</b>\n\n"
+            f"📦 Yuk: {o.cargo_description}\n"
+            f"🔵 {o.point_a} → 🔴 {o.point_b}\n"
+            f"🚘 Mashina: {o.vehicle_number or '—'}\n\n"
+            f"Lokatsiyani so'rash uchun bosing 👇\n\n"
+            f"<i>⏱ 15 daqiqa ichida aloqaga chiqiladi.</i>",
             reply_markup=kb.as_markup(),
             parse_mode="HTML",
         )
@@ -172,3 +174,12 @@ async def client_trigger_location(callback: CallbackQuery, user: User):
             ))
 
     await callback.answer("✅ Haydovchidan lokatsiya so'raldi.")
+    try:
+        await callback.message.answer(
+            f"⏳ <b>Lokatsiya so'raldi!</b>\n\n"
+            f"Haydovchi lokatsiyasini yuborgach, dispetcher sizga yuboradi.\n"
+            f"<i>15 daqiqa ichida aloqaga chiqiladi.</i>",
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass

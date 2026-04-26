@@ -7,7 +7,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from dotenv import load_dotenv
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from bot.handler.founder    import founder_router
 from bot.handler.logist     import logist_router, logist_doc_router
@@ -29,6 +29,9 @@ async def on_startup():
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            await conn.execute(text(
+                "ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_name VARCHAR"
+            ))
 
         async with async_session() as session:
             founder = (

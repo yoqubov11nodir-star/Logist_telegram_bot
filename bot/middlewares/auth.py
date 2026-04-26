@@ -4,15 +4,10 @@ from typing import Any, Awaitable, Callable, Dict
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
 from sqlalchemy import select
-from sqlalchemy import update
 
 from database.session import async_session
 from database.models import User, UserRole
 
-import os
-from dotenv import load_dotenv
-load_dotenv()
-FOUNDER_ID = int(os.getenv("FOUNDER_ID", 0))
 
 class AuthMiddleware(BaseMiddleware):
     async def __call__(
@@ -32,7 +27,6 @@ class AuthMiddleware(BaseMiddleware):
             user = res.scalar_one_or_none()
 
             if not user:
-                # Yangi foydalanuvchi — bazaga qo'shish
                 user = User(
                     telegram_id=tg_user.id,
                     full_name=tg_user.full_name or "Noma'lum",
@@ -42,26 +36,7 @@ class AuthMiddleware(BaseMiddleware):
                 session.add(user)
                 await session.commit()
                 await session.refresh(user)
-
-                # Founderga xabar
-                bot = data.get("bot")
-                if bot:
-                    from bot.keyboards.founder_kb import get_set_role_keyboard
-                    try:
-                        await bot.send_message(
-                            chat_id=FOUNDER_ID,
-                            text=(
-                                f"🔔 <b>Yangi foydalanuvchi botga kirdi!</b>\n\n"
-                                f"👤 Ism: {user.full_name}\n"
-                                f"🆔 ID: <code>{user.telegram_id}</code>\n"
-                                f"🔗 Username: @{user.username or 'Yo\'q'}\n\n"
-                                f"Rol tayinlang:"
-                            ),
-                            reply_markup=get_set_role_keyboard(user.telegram_id),
-                            parse_mode="HTML",
-                        )
-                    except Exception as e:
-                        logging.error(f"Founderga xabar yuborishda xato: {e}")
+                # Founder notification is sent after user submits phone (handle_contact)
 
         data["user"] = user
         return await handler(event, data)
